@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Barcode Scanner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    #scanner-container { width: 100%; max-width: 400px; margin: 0 auto; }
+    #scanned-users { margin-top: 20px; }
+    #scanned-users ul { list-style: none; padding: 0; }
+    #scanned-users li { background: #e0e0e0; margin: 5px 0; padding: 10px; border-radius: 5px; }
+    button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body>
+  <h1>Scan User Barcodes</h1>
+  <div id="scanner-container"></div>
+  <div id="scanned-users">
+    <h2>Scanned Users:</h2>
+    <ul id="user-list"></ul>
+  </div>
+  <button id="submit-button">Submit Scanned Users</button>
+
+  <script>
+    const scannedBarcodes = new Set();
+    const scannedUsers = [];
+
+    // Replace with your Airtable API key and base ID
+    const airtableApiKey = 'patWXpQpY63MBFyxB.fee4486fab31cb98fb562233bc4800245d78989a199ca4098b55162a8b9a4c7b';
+    const airtableBaseId = 'appTi77lekpU9tJpm';
+    const airtableTableName = 'Users - odlozitest V2';
+
+    // Initialize QuaggaJS
+    Quagga.init({
+      inputStream: {
+        name: "Live",
+        type: "LiveStream",
+        target: document.querySelector('#scanner-container'),
+        constraints: {
+          facingMode: "environment" // or user for front camera
+        },
+      },
+      decoder: {
+        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader", "upc_reader", "upc_e_reader"]
+      },
+    }, function(err) {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      Quagga.start();
+    });
+
+    // On barcode detected
+    Quagga.onDetected(async function(result) {
+      const code = result.codeResult.code;
+      if (scannedBarcodes.has(code)) {
+        console.log(`Barcode ${code} already scanned.`);
+        return;
+      }
+
+      // Fetch user from Airtable
+      const user = await fetchUserByBarcode(code);
+      if (user) {
+        scannedBarcodes.add(code);
+        scannedUsers.push(user);
+        displayUser(user);
+      } else {
+        console.log(`No user found with barcode ${code}.`);
+      }
+    });
+
+    // Fetch user by barcode from Airtable
+    async function fetchUserByBarcode(barcode) {
+      const url = `https://api.airtable.com/v0/${airtableBaseId}/${airtableTableName}?filterByFormula={Barcode}='${barcode}'`;
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${airtableApiKey}`
+        }
+      });
+      const data = await response.json();
+      if (data.records && data.records.length > 0) {
+        return data.records[0].fields;
+      }
+      return null;
+    }
+
+    // Display user in the list
+    function displayUser(user) {
+      const userList = document.getElementById('user-list');
+      const li = document.createElement('li');
+      li.textContent = user.Name;
+      userList.appendChild(li);
+    }
+
+    // Submit scanned users
+    document.getElementById('submit-button').addEventListener('click', async () => {
+      if (scannedUsers.length === 0) {
+        alert('No users scanned.');
+        return;
+      }
+
+      // Example: Submit to Airtable (you can customize this)
+      const url = `https://api.airtable.com/v0/${airtableBaseId}/ScannedUsers`;
+      const records = scannedUsers.map(user => ({
+        fields: {
+          Name: user.Name,
+          Barcode: user.Barcode
+        }
+      }));
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${airtableApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ records })
+      });
+
+      if (response.ok) {
+        alert(`Submitted ${scannedUsers.length} users.`);
+        // Reset
+        scannedBarcodes.clear();
+        scannedUsers.length = 0;
+        document.getElementById('user-list').innerHTML = '';
+      } else {
+        alert('Error submitting users.');
+      }
+    });
+  </script>
+</body>
+</html>
