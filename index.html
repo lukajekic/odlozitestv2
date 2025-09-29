@@ -1,83 +1,337 @@
 <!DOCTYPE html>
-<html>
+<html lang="sr">
 <head>
-  <meta charset="UTF-8">
-  <title>Barcode Scanner with Airtable</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    video {
-      width: 100%;
-      max-width: 500px;
-      border: 2px solid black;
-    }
-    #result {
-      margin-top: 20px;
-      font-size: 20px;
-      font-weight: bold;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nadolazeći Testovi</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .test-item {
+            background-color: #fff;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+        .test-item h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .test-details {
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .vote-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: opacity 0.3s ease;
+        }
+        .vote-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .test-item.blocked {
+            background-image: repeating-linear-gradient(
+                45deg,
+                #f8d7da,
+                #f8d7da 10px,
+                #fff 10px,
+                #fff 20px
+            );
+            background-size: 40px 40px;
+            opacity: 0.8;
+        }
+        .promoimg {
+            margin-left: auto;
+            margin-right: auto;
+            padding-bottom: 10px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            border-radius: 8px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 150px;
+        }
+        .modal-content > *:not(.loader-container) {
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+        .modal-content.loading > *:not(.loader-container) {
+            opacity: 0.5;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            position: absolute;
+            top: 10px;
+            right: 15px;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .modal-buttons {
+            text-align: right;
+            margin-top: 20px;
+        }
+        .modal-buttons button {
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+            border: none;
+            font-size: 0.9em;
+        }
+        .vote-count {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #777;
+        }
+        .loader-container {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+            z-index: 10;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @media (min-width: 768px) {
+            .loader {
+                width: 50px;
+                height: 50px;
+                border: 6px solid #f3f3f3;
+                border-top: 6px solid #3498db;
+            }
+        }
+    </style>
 </head>
 <body>
+    <h1>Nadolazeći Testovi</h1>
+    
+    <span style="margin-bottom: 10px;">Glasajte za pismene provere i odgovaranja za koje niste spremni! Dve stavke sa najvise glasova mogu biti odlozene. Predsednik odeljenja (Luka Jekić) nije duzan da odlozi stavke za koje smatra da nisu racionalno izglasane.</span>
 
-<h1>Scan Barcode</h1>
-<video id="video" autoplay></video>
-<div id="result">Waiting for scan...</div>
+    <div id="tests-container"></div>
 
-<script src="https://unpkg.com/@zxing/browser@0.1.1/umd/index.min.js"></script>
-<script>
-  const apiKey = 'YOUR_API_KEY'; // <-- paste your API Key
-  const baseId = 'YOUR_BASE_ID'; // <-- paste your Base ID
-  const tableName = 'Users'; // <-- your Airtable table name
+    <div id="voteModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <p>Da li ste sigurni da želite da glasate za ovaj test?</p>
+            <div class="modal-buttons">
+                <button type="button" class="cancel-vote">Otkaži</button>
+                <button type="button" class="vote-button" id="confirmVoteBtn">Glasaj</button>
+            </div>
+            <div class="loader-container" id="modalLoader" style="display: none;">
+                <div class="loader"></div>
+            </div>
+        </div>
+    </div>
 
-  const resultDiv = document.getElementById('result');
-  const codeReader = new ZXing.BrowserBarcodeReader();
-  const corsProxy = 'https://corsproxy.io/?';
+    <script>
+        const testsContainer = document.getElementById('tests-container');
+        const voteModal = document.getElementById('voteModal');
+        const modalContent = voteModal.querySelector('.modal-content');
+        const modalLoader = document.getElementById('modalLoader');
+        const closeButton = document.querySelector('.close-button');
+        const confirmVoteBtn = document.getElementById('confirmVoteBtn');
+        let currentTestId = null;
 
-  codeReader
-    .getVideoInputDevices()
-    .then((videoInputDevices) => {
-      const selectedDeviceId = videoInputDevices[0].deviceId;
+        // Tvoji API podaci
+        const airtableApiKey = 'patWXpQpY63MBFyxB.fee4486fab31cb98fb562233bc4800245d78989a199ca4098b55162a8b9a4c7b';
+        const airtableBaseId = 'appcBvRM8XgNS3heC';
+        const airtableTableName = 'Tests';
 
-      return codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
-        if (result) {
-          const barcode = result.text.trim();
-          resultDiv.textContent = `Scanned: ${barcode}`;
-          lookupInAirtable(barcode);
-          codeReader.reset(); // stop scanner after one scan
+        async function fetchTests() {
+            try {
+                const response = await fetch(`https://api.airtable.com/v0/${airtableBaseId}/${airtableTableName}?sortField=Date&sortDirection=asc`, {
+                    headers: { 'Authorization': `Bearer ${airtableApiKey}` }
+                });
+                const data = await response.json();
+                return data.records.map(record => ({
+                    id: record.fields.ID,
+                    subject: record.fields.Subject,
+                    title: record.fields.Title,
+                    date: record.fields.Date,
+                    votes: record.fields.Votes || 0,
+                    blocked: record.fields.Blocked === "true"
+                }));
+            } catch (error) {
+                console.error('Greška pri preuzimanju testova:', error);
+                return [];
+            }
         }
-      });
-    })
-    .catch((err) => {
-      console.error(err);
-      resultDiv.textContent = 'Error accessing camera.';
-    });
 
-  function lookupInAirtable(barcode) {
-    const url = `${corsProxy}https://api.airtable.com/v0/${baseId}/${tableName}?filterByFormula={Barcode}='${barcode}'`;
+        async function getTestRecord(recordId) {
+            try {
+                const response = await fetch(`https://api.airtable.com/v0/${airtableBaseId}/${airtableTableName}/${recordId}`, {
+                    headers: { 'Authorization': `Bearer ${airtableApiKey}` }
+                });
+                const data = await response.json();
+                return data && data.fields ? data : null;
+            } catch (error) {
+                console.error(`Greška pri preuzimanju zapisa ${recordId}:`, error);
+                return null;
+            }
+        }
 
-    fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      }
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.records.length > 0) {
-        const user = data.records[0].fields;
-        resultDiv.textContent = `Found: ${user.Name || 'Unnamed'} (Barcode: ${barcode})`;
-      } else {
-        resultDiv.textContent = `Not found: ${barcode}`;
-      }
-    })
-    .catch(error => {
-      console.error(error);
-      resultDiv.textContent = 'Error fetching data.';
-    });
-  }
-</script>
+        async function updateVoteCount(recordId, testItem) {
+            modalContent.classList.add('loading');
+            modalLoader.style.display = 'flex';
+            try {
+                const testRecord = await getTestRecord(recordId);
+                if (testRecord?.fields?.Votes !== undefined) {
+                    const newVoteCount = testRecord.fields.Votes + 1;
+                    await fetch(`https://api.airtable.com/v0/${airtableBaseId}/${airtableTableName}/${recordId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${airtableApiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fields: { Votes: newVoteCount } })
+                    });
+                }
+            } catch (error) {
+                console.error('Greška pri glasanju:', error);
+            } finally {
+                modalContent.classList.remove('loading');
+                modalLoader.style.display = 'none';
+            }
+        }
 
+        function formatDateSerbianTime(isoDate) {
+            const date = new Date(isoDate);
+            return date.toLocaleDateString('sr-RS', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric'});
+        }
+
+        function hasUserVoted(testId) {
+            const votedTests = localStorage.getItem('votedTests');
+            return votedTests && votedTests.includes(testId.toString());
+        }
+
+        function recordVoteLocally(testId) {
+            let votedTests = localStorage.getItem('votedTests') || '';
+            localStorage.setItem('votedTests', votedTests + (votedTests ? ',' : '') + testId);
+        }
+
+        function handleVoteButtonClick(testId) {
+            if (hasUserVoted(testId)) {
+                alert('Već ste glasali za ovaj test.');
+                return;
+            }
+            currentTestId = testId;
+            voteModal.style.display = 'block';
+        }
+
+        confirmVoteBtn.addEventListener('click', async () => {
+            if (currentTestId !== null) {
+                const testItem = document.querySelector(`.vote-button[data-test-id="${currentTestId}"]`).closest('.test-item');
+                await updateVoteCount(currentTestId, testItem);
+                recordVoteLocally(currentTestId);
+                const voteButton = testItem.querySelector('.vote-button');
+                if (voteButton) {
+                    voteButton.disabled = true;
+                    voteButton.textContent = 'Glasano';
+                }
+                voteModal.style.display = 'none';
+                currentTestId = null;
+                alert('Glas je zabeležen!');
+            }
+        });
+
+        closeButton.addEventListener('click', () => voteModal.style.display = 'none');
+        window.addEventListener('click', e => { if (e.target === voteModal) voteModal.style.display = 'none'; });
+
+        async function displayTests() {
+            const now = new Date();
+            const tests = await fetchTests();
+            testsContainer.innerHTML = '';
+            for (const test of tests.filter(t => new Date(t.date) >= now)) {
+                const testDiv = document.createElement('div');
+                testDiv.classList.add('test-item');
+                if (test.blocked) testDiv.classList.add('blocked');
+
+                testDiv.innerHTML = `
+                    <h3>${test.title}</h3>
+                    <div class="test-details">
+                        Predmet: ${test.subject}<br>
+                        Datum: ${formatDateSerbianTime(test.date)}
+                    </div>
+                    ${test.blocked ? '' : `
+                        <button class="vote-button" data-test-id="${test.id}" ${hasUserVoted(test.id) ? 'disabled' : ''}>
+                            ${hasUserVoted(test.id) ? 'Glasano' : 'Glasaj'}
+                        </button>`}
+                    <span class="vote-count">Glasovi: ${test.votes}</span>
+                `;
+
+                testsContainer.appendChild(testDiv);
+
+                if (!test.blocked) {
+                    const voteButton = testDiv.querySelector('.vote-button');
+                    voteButton.addEventListener('click', () => handleVoteButtonClick(test.id));
+                }
+            }
+        }
+
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        if (isMobileDevice()) {
+            displayTests();
+        } else {
+            document.body.innerHTML = '<p style="text-align: center; margin-top: 50px;">Ova stranica je dizajnirana samo za mobilne uređaje.</p>';
+        }
+    </script>
 </body>
 </html>
